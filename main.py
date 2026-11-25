@@ -1,9 +1,12 @@
-"""Шифрование и расшифровка сообщений методом Виженера."""
+"""Шифрование и расшифровка сообщений методами Виженера и Полибия."""
 
 ALPHABETS = (
     "abcdefghijklmnopqrstuvwxyz",
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
 )
+
+POLYBIUS_ALPHABETS = {"en": ALPHABETS[0], "ru": ALPHABETS[1]}
+POLYBIUS_SIZE = 6
 
 
 def _vigenere(message: str, key: str, direction: int) -> str:
@@ -50,16 +53,84 @@ def vigenere_decrypt(message: str, key: str) -> str:
     return _vigenere(message, key, -1)
 
 
+def _polybius_alphabet(language: str) -> str:
+    """Возвращает алфавит квадрата 6×6 для выбранного языка."""
+    if language not in POLYBIUS_ALPHABETS:
+        raise ValueError("Выберите язык ru (русский) или en (английский).")
+    return POLYBIUS_ALPHABETS[language]
+
+
+def polybius_encrypt(message: str, language: str = "ru") -> str:
+    """Кодирует буквы координатами 11–66, пробелы — /, прочее — U+XXXX.
+
+    Алфавит записан по строкам квадрата 6×6, нумерация начинается с 1.
+    Регистр букв не сохраняется; ключ не требуется.
+    """
+    alphabet = _polybius_alphabet(language)
+    result = []
+    for char in message:
+        lower = char.lower()
+        if lower in alphabet:
+            row, column = divmod(alphabet.index(lower), POLYBIUS_SIZE)
+            result.append(f"{row + 1}{column + 1}")
+        elif char.isalpha():
+            raise ValueError("Буквы сообщения должны принадлежать выбранному алфавиту.")
+        elif char == " ":
+            result.append("/")
+        else:
+            result.append(f"U+{ord(char):04X}")
+    return " ".join(result)
+
+
+def polybius_decrypt(message: str, language: str = "ru") -> str:
+    """Расшифровывает координаты Полибия; возвращает заглавные буквы."""
+    alphabet = _polybius_alphabet(language)
+    result = []
+    for token in message.split():
+        if token == "/":
+            result.append(" ")
+        elif (len(token) == 2
+              and all(char in "123456" for char in token)):
+            index = (int(token[0]) - 1) * POLYBIUS_SIZE + int(token[1]) - 1
+            if index >= len(alphabet):
+                raise ValueError(f"Клетка {token} пуста в выбранном квадрате.")
+            result.append(alphabet[index].upper())
+        elif token.startswith("U+"):
+            digits = token[2:]
+            if not 4 <= len(digits) <= 6 or any(
+                char not in "0123456789abcdefABCDEF" for char in digits
+            ):
+                raise ValueError(f"Некорректный код символа: {token}.")
+            try:
+                char = chr(int(digits, 16))
+            except ValueError:
+                raise ValueError(f"Некорректный код символа: {token}.") from None
+            if char.isalpha() or 0xD800 <= ord(char) <= 0xDFFF:
+                raise ValueError(f"Код {token} не обозначает небуквенный символ.")
+            result.append(char)
+        else:
+            raise ValueError(f"Некорректный код Полибия: {token}.")
+    return "".join(result)
+
+
 if __name__ == "__main__":
     try:
+        method = input("Выберите метод (1 — Виженер, 2 — Полибий): ").strip()
+        if method not in ("1", "2"):
+            raise ValueError("Выберите метод 1 или 2.")
         mode = input("Выберите режим (1 — шифрование, 2 — расшифровка): ").strip()
         if mode not in ("1", "2"):
             raise ValueError("Выберите режим 1 или 2.")
         message = input("Введите сообщение: ")
-        key = input("Введите ключ: ")
-        if mode == "1":
-            print("Зашифрованное сообщение:", vigenere_encrypt(message, key))
+        if method == "1":
+            key = input("Введите ключ: ")
+            transform = vigenere_encrypt if mode == "1" else vigenere_decrypt
+            result = transform(message, key)
         else:
-            print("Расшифрованное сообщение:", vigenere_decrypt(message, key))
+            language = input("Выберите язык (ru — русский, en — английский): ").strip().lower()
+            transform = polybius_encrypt if mode == "1" else polybius_decrypt
+            result = transform(message, language)
+        label = "Зашифрованное сообщение:" if mode == "1" else "Расшифрованное сообщение:"
+        print(label, result)
     except ValueError as error:
         print("Ошибка:", error)
